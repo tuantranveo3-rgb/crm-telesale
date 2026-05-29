@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: crm-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: DB_PATH
+        value: ./crm.db
+      - key: FRONTEND_URL
+        value: https://your-app.vercel.app
