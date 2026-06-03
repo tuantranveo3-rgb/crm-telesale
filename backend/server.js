@@ -57,6 +57,10 @@ async function startServer() {
       needsSeed = true;
     }
 
+    // Migration: add new columns to call_logs if not exist
+    try { await db.run('ALTER TABLE call_logs ADD COLUMN call_method TEXT'); } catch {}
+    try { await db.run("ALTER TABLE call_logs ADD COLUMN call_status TEXT DEFAULT 'Kết thúc'"); } catch {}
+
     if (needsSeed) {
       console.log('🌱 Database empty — running initial seed...');
       const bcrypt = require('bcryptjs');

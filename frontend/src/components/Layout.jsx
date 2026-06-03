@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
@@ -34,6 +34,21 @@ export default function Layout({ children }) {
   });
 
   const badgeCount = (followData?.pagination?.total || 0) + (overdueData?.pagination?.total || 0);
+  const todayCount = followData?.pagination?.total || 0;
+  const overdueCount = overdueData?.pagination?.total || 0;
+  const [showAlert, setShowAlert] = useState(false);
+  const alertShown = useRef(false);
+
+  useEffect(() => {
+    if (alertShown.current) return;
+    const sessionKey = `followup_alert_${user?.user_id}_${new Date().toISOString().split('T')[0]}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+    if ((todayCount > 0 || overdueCount > 0) && followData && overdueData) {
+      alertShown.current = true;
+      sessionStorage.setItem(sessionKey, '1');
+      setShowAlert(true);
+    }
+  }, [todayCount, overdueCount, followData, overdueData, user?.user_id]);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -41,6 +56,25 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Follow-up daily alert */}
+      {showAlert && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm w-full bg-white rounded-xl shadow-lg border border-primary-200 p-4 animate-fade-in">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <p className="font-semibold text-gray-800 text-sm">📅 Công việc hôm nay</p>
+              <div className="mt-1 space-y-0.5 text-sm text-gray-600">
+                {todayCount > 0 && <p>• <strong className="text-primary-600">{todayCount}</strong> follow-up cần xử lý hôm nay</p>}
+                {overdueCount > 0 && <p>• <strong className="text-red-600">{overdueCount}</strong> follow-up đã quá hạn</p>}
+              </div>
+              <Link to="/follow-ups" onClick={() => setShowAlert(false)} className="mt-2 inline-block text-xs text-primary-600 font-medium hover:underline">
+                Xem ngay →
+              </Link>
+            </div>
+            <button onClick={() => setShowAlert(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none flex-shrink-0">×</button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />

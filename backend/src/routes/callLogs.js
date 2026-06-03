@@ -7,7 +7,7 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     const db = await getDb();
-    const { customer_id, sale_id, call_result, date_from, date_to } = req.query;
+    const { customer_id, sale_id, call_result, call_method, call_status, date_from, date_to } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const conditions = [];
@@ -22,6 +22,8 @@ router.get('/', authenticate, async (req, res) => {
     if (customer_id) { conditions.push('cl.customer_id = ?'); params.push(customer_id); }
     if (sale_id && req.user.role === 'Admin') { conditions.push('cl.sale_id = ?'); params.push(sale_id); }
     if (call_result) { conditions.push('cl.call_result = ?'); params.push(call_result); }
+    if (call_method) { conditions.push('cl.call_method = ?'); params.push(call_method); }
+    if (call_status) { conditions.push('cl.call_status = ?'); params.push(call_status); }
     if (date_from) { conditions.push('cl.call_date >= ?'); params.push(date_from); }
     if (date_to) { conditions.push('cl.call_date <= ?'); params.push(date_to); }
 
@@ -37,7 +39,7 @@ router.get('/', authenticate, async (req, res) => {
 
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { customer_id, call_date, call_time, call_result, call_content, customer_need, interest_level, next_action, follow_up_date, status_after_call } = req.body;
+    const { customer_id, call_date, call_time, call_result, call_method, call_status, call_content, customer_need, interest_level, next_action, follow_up_date, status_after_call } = req.body;
     if (!customer_id || !call_date || !call_result) return res.status(400).json({ message: 'Thiếu thông tin bắt buộc' });
     const db = await getDb();
     const customer = await db.get('SELECT * FROM customers WHERE customer_id = ?', [customer_id]);
@@ -46,8 +48,8 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(403).json({ message: 'Bạn không có quyền nhập cuộc gọi cho khách hàng này' });
     }
     const result = await db.run(
-      'INSERT INTO call_logs (customer_id,sale_id,call_date,call_time,call_result,call_content,customer_need,interest_level,next_action,follow_up_date,status_after_call) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-      [customer_id, req.user.user_id, call_date, call_time || null, call_result, call_content || null, customer_need || null, interest_level || null, next_action || null, follow_up_date || null, status_after_call || null]
+      'INSERT INTO call_logs (customer_id,sale_id,call_date,call_time,call_result,call_method,call_status,call_content,customer_need,interest_level,next_action,follow_up_date,status_after_call) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [customer_id, req.user.user_id, call_date, call_time || null, call_result, call_method || 'Gọi điện', call_status || 'Kết thúc', call_content || null, customer_need || null, interest_level || null, next_action || null, follow_up_date || null, status_after_call || null]
     );
     if (status_after_call) {
       await db.run('UPDATE customers SET status=?, updated_at=CURRENT_TIMESTAMP WHERE customer_id=?', [status_after_call, customer_id]);
@@ -67,9 +69,10 @@ router.put('/:id', authenticate, async (req, res) => {
     const log = await db.get('SELECT * FROM call_logs WHERE call_id = ?', [req.params.id]);
     if (!log) return res.status(404).json({ message: 'Không tìm thấy cuộc gọi' });
     if (log.sale_id !== req.user.user_id && req.user.role !== 'Admin') return res.status(403).json({ message: 'Không có quyền' });
-    const { call_result, call_content, customer_need, interest_level, next_action, follow_up_date, status_after_call } = req.body;
-    await db.run('UPDATE call_logs SET call_result=?,call_content=?,customer_need=?,interest_level=?,next_action=?,follow_up_date=?,status_after_call=? WHERE call_id=?',
-      [call_result || log.call_result, call_content ?? log.call_content, customer_need ?? log.customer_need,
+    const { call_result, call_method, call_status, call_content, customer_need, interest_level, next_action, follow_up_date, status_after_call } = req.body;
+    await db.run('UPDATE call_logs SET call_result=?,call_method=?,call_status=?,call_content=?,customer_need=?,interest_level=?,next_action=?,follow_up_date=?,status_after_call=? WHERE call_id=?',
+      [call_result || log.call_result, call_method ?? log.call_method, call_status ?? log.call_status,
+       call_content ?? log.call_content, customer_need ?? log.customer_need,
        interest_level ?? log.interest_level, next_action ?? log.next_action, follow_up_date ?? log.follow_up_date,
        status_after_call ?? log.status_after_call, req.params.id]);
     res.json({ message: 'Cập nhật thành công' });

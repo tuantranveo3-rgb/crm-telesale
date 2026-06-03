@@ -19,6 +19,7 @@ export default function Customers() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState(null);
+  const [importResult, setImportResult] = useState(null);
   const fileRef = useRef();
 
   const { data, isLoading } = useQuery({
@@ -32,7 +33,19 @@ export default function Customers() {
   const mutCreate = useMutation({ mutationFn: customersApi.create, onSuccess: () => { toast.success('Thêm khách hàng thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
   const mutUpdate = useMutation({ mutationFn: ({ id, data }) => customersApi.update(id, data), onSuccess: () => { toast.success('Cập nhật thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
   const mutDelete = useMutation({ mutationFn: customersApi.delete, onSuccess: () => { toast.success('Đã xóa khách hàng'); qc.invalidateQueries(['customers']); setDeleteId(null); } });
-  const mutImport = useMutation({ mutationFn: customersApi.importExcel, onSuccess: (res) => { toast.success(res.message); qc.invalidateQueries(['customers']); closeModal(); } });
+  const mutImport = useMutation({
+    mutationFn: customersApi.importExcel,
+    onSuccess: (res) => {
+      qc.invalidateQueries(['customers']);
+      if (res.errors?.length > 0) {
+        setImportResult(res);
+        setModal('import-result');
+      } else {
+        toast.success(res.message);
+        closeModal();
+      }
+    }
+  });
 
   const openCreate = () => { setForm(EMPTY_FORM); setEditing(null); setModal('create'); };
   const openEdit = (c) => { setForm({ ...c, assigned_sale_id: c.assigned_sale_id || '', area_id: c.area_id || '' }); setEditing(c); setModal('edit'); };
@@ -243,6 +256,40 @@ export default function Customers() {
         title="Xóa khách hàng"
         message="Bạn có chắc chắn muốn xóa khách hàng này? Toàn bộ lịch sử cuộc gọi và follow-up sẽ bị xóa theo."
       />
+
+      {/* Import result modal */}
+      <Modal open={modal === 'import-result'} onClose={() => setModal(null)} title="📊 Kết quả Import" size="lg">
+        {importResult && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-green-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-green-600">{importResult.success}</div>
+                <div className="text-sm text-green-700">Import thành công</div>
+              </div>
+              <div className="p-3 bg-red-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-red-600">{importResult.errors?.length || 0}</div>
+                <div className="text-sm text-red-700">Bị lỗi / bỏ qua</div>
+              </div>
+            </div>
+            {importResult.errors?.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Chi tiết lỗi:</p>
+                <div className="max-h-60 overflow-y-auto border border-red-100 rounded-lg divide-y divide-red-50">
+                  {importResult.errors.map((e, i) => (
+                    <div key={i} className="px-3 py-2 text-sm flex justify-between">
+                      <span className="text-gray-500">Dòng {e.row}</span>
+                      <span className="text-red-600">{e.error}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button onClick={() => setModal(null)} className="btn-primary">Đóng</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
