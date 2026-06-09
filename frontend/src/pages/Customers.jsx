@@ -2,19 +2,19 @@ import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { customersApi, usersApi, areasApi } from '../api';
+import { customersApi, usersApi, areasApi, settingsApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import Pagination from '../components/common/Pagination';
-import { STATUS_COLORS, POTENTIAL_COLORS, CUSTOMER_TYPES, SOURCES, POTENTIAL_LEVELS, CUSTOMER_STATUSES, formatDate } from '../utils/constants';
+import { STATUS_COLORS, POTENTIAL_COLORS, SOURCES, POTENTIAL_LEVELS, CUSTOMER_STATUSES, formatDate } from '../utils/constants';
 
-const EMPTY_FORM = { customer_name: '', phone: '', zalo: '', address: '', province: '', district: '', ward: '', customer_type: '', source: '', potential_level: '', status: 'Khách mới', assigned_sale_id: '', area_id: '', note: '' };
+const EMPTY_FORM = { customer_name: '', phone: '', zalo: '', address: '', province: '', district: '', ward: '', sales_channel: '', customer_type: '', segment: '', chain_system: '', source: '', potential_level: '', status: 'Khách mới', assigned_sale_id: '', area_id: '', note: '' };
 
 export default function Customers() {
   const { canManage, isAdmin, user } = useAuth();
   const qc = useQueryClient();
-  const [filters, setFilters] = useState({ search: '', sale_id: '', area_id: '', status: '', customer_type: '', potential_level: '', page: 1, limit: 20 });
+  const [filters, setFilters] = useState({ search: '', sale_id: '', area_id: '', status: '', sales_channel: '', customer_type: '', segment: '', potential_level: '', page: 1, limit: 20 });
   const [modal, setModal] = useState(null); // null | 'create' | 'edit' | 'import'
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -29,6 +29,12 @@ export default function Customers() {
 
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: usersApi.list, enabled: canManage });
   const { data: areas = [] } = useQuery({ queryKey: ['areas'], queryFn: areasApi.list });
+  const { data: lookupData } = useQuery({ queryKey: ['lookups'], queryFn: settingsApi.getLookupsPublic });
+  const lkp = lookupData?.grouped || {};
+  const channels = lkp['sales_channel'] || [];
+  const customerTypesByChannel = (ch) => (lkp['customer_type'] || []).filter(x => !ch || x.parent_value === ch);
+  const segmentsByChannel = (ch) => (lkp['segment'] || []).filter(x => !ch || x.parent_value === ch);
+  const systemsByChannel = (ch) => (lkp['chain_system'] || []).filter(x => !ch || x.parent_value === ch);
 
   const mutCreate = useMutation({ mutationFn: customersApi.create, onSuccess: () => { toast.success('Thêm khách hàng thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
   const mutUpdate = useMutation({ mutationFn: ({ id, data }) => customersApi.update(id, data), onSuccess: () => { toast.success('Cập nhật thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
@@ -89,13 +95,21 @@ export default function Customers() {
       <div className="card">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <input className="input" placeholder="🔍 Tìm kiếm..." value={filters.search} onChange={e => setFilter('search', e.target.value)} />
-          <select className="input" value={filters.status} onChange={e => setFilter('status', e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {CUSTOMER_STATUSES.map(s => <option key={s}>{s}</option>)}
+          <select className="input" value={filters.sales_channel} onChange={e => { setFilter('sales_channel', e.target.value); setFilter('customer_type', ''); setFilter('segment', ''); }}>
+            <option value="">Tất cả kênh BH</option>
+            {channels.map(c => <option key={c.id} value={c.value}>{c.value}</option>)}
           </select>
           <select className="input" value={filters.customer_type} onChange={e => setFilter('customer_type', e.target.value)}>
             <option value="">Tất cả loại KH</option>
-            {CUSTOMER_TYPES.map(s => <option key={s}>{s}</option>)}
+            {customerTypesByChannel(filters.sales_channel).map(s => <option key={s.id} value={s.value}>{s.value}</option>)}
+          </select>
+          <select className="input" value={filters.segment} onChange={e => setFilter('segment', e.target.value)}>
+            <option value="">Tất cả phân khúc</option>
+            {segmentsByChannel(filters.sales_channel).map(s => <option key={s.id} value={s.value}>{s.value}</option>)}
+          </select>
+          <select className="input" value={filters.status} onChange={e => setFilter('status', e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {CUSTOMER_STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
           <select className="input" value={filters.potential_level} onChange={e => setFilter('potential_level', e.target.value)}>
             <option value="">Tất cả tiềm năng</option>
@@ -181,10 +195,31 @@ export default function Customers() {
               <input className="input" value={form.zalo} onChange={e => setForm(f => ({ ...f, zalo: e.target.value }))} placeholder="Số Zalo..." />
             </div>
             <div>
+              <label className="label">Kênh bán hàng</label>
+              <select className="input" value={form.sales_channel} onChange={e => setForm(f => ({ ...f, sales_channel: e.target.value, customer_type: '', segment: '', chain_system: '' }))}>
+                <option value="">-- Chọn kênh --</option>
+                {channels.map(c => <option key={c.id} value={c.value}>{c.value}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="label">Loại khách hàng</label>
               <select className="input" value={form.customer_type} onChange={e => setForm(f => ({ ...f, customer_type: e.target.value }))}>
                 <option value="">-- Chọn loại --</option>
-                {CUSTOMER_TYPES.map(t => <option key={t}>{t}</option>)}
+                {customerTypesByChannel(form.sales_channel).map(t => <option key={t.id} value={t.value}>{t.value}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Phân khúc</label>
+              <select className="input" value={form.segment} onChange={e => setForm(f => ({ ...f, segment: e.target.value }))}>
+                <option value="">-- Chọn phân khúc --</option>
+                {segmentsByChannel(form.sales_channel).map(s => <option key={s.id} value={s.value}>{s.value}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Hệ thống / Chuỗi</label>
+              <select className="input" value={form.chain_system} onChange={e => setForm(f => ({ ...f, chain_system: e.target.value }))}>
+                <option value="">-- Chọn hệ thống --</option>
+                {systemsByChannel(form.sales_channel).map(s => <option key={s.id} value={s.value}>{s.value}</option>)}
               </select>
             </div>
             <div>

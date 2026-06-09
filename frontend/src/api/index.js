@@ -114,3 +114,11 @@ export const reportsApi = {
   pipeline: () => api.get('/reports/pipeline'),
   exportExcel: (type) => downloadBlob(`${BASE_URL}/reports/export/${type}`, `report_${type}.xlsx`),
 };
+
+export const settingsApi = {
+  getLookups: () => api.get('/settings/lookups/all'),
+  getLookupsPublic: () => api.get('/settings/lookups'),
+  createLookup: (data) => api.post('/settings/lookups', data),
+  updateLookup: (id, data) => api.put(`/settings/lookups/${id}`, data),
+  deleteLookup: (id) => api.delete(`/settings/lookups/${id}`),
+};

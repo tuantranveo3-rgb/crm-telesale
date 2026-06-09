@@ -11,6 +11,7 @@ import Pipeline from './pages/Pipeline';
 import Users from './pages/Users';
 import Areas from './pages/Areas';
 import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, loading, isAdmin } = useAuth();
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
           <Route path="/areas" element={<ProtectedRoute adminOnly><Areas /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

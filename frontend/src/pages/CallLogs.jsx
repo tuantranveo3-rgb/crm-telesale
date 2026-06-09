@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { callLogsApi, customersApi, usersApi } from '../api';
+import { callLogsApi, customersApi, usersApi, settingsApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
-import { CALL_RESULT_COLORS, CALL_RESULTS, CALL_METHODS, CALL_STATUSES, CALL_STATUS_COLORS, NEXT_ACTIONS, CUSTOMER_STATUSES, formatDate } from '../utils/constants';
+import { CALL_RESULT_COLORS, CALL_STATUS_COLORS, CUSTOMER_STATUSES, formatDate } from '../utils/constants';
 
 export default function CallLogs() {
   const { canManage } = useAuth();
@@ -25,6 +25,12 @@ export default function CallLogs() {
   const { data, isLoading } = useQuery({ queryKey: ['call-logs', filters], queryFn: () => callLogsApi.list(filters) });
   const { data: customers } = useQuery({ queryKey: ['customers-search', custSearch], queryFn: () => customersApi.list({ search: custSearch, limit: 20 }), enabled: custSearch.length >= 1 });
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: usersApi.list, enabled: canManage });
+  const { data: lookupData } = useQuery({ queryKey: ['lookups'], queryFn: settingsApi.getLookupsPublic });
+  const lkp = lookupData?.grouped || {};
+  const callMethods = (lkp['call_method'] || []).map(x => x.value);
+  const callStatuses = (lkp['call_status'] || []).map(x => x.value);
+  const callResults = (lkp['call_result'] || []).map(x => x.value);
+  const nextActions = (lkp['next_action'] || []).map(x => x.value);
 
   const mutCreate = useMutation({
     mutationFn: callLogsApi.create,
@@ -54,11 +60,11 @@ export default function CallLogs() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <select className="input" value={filters.call_result} onChange={e => setFilter('call_result', e.target.value)}>
             <option value="">Tất cả kết quả</option>
-            {CALL_RESULTS.map(r => <option key={r}>{r}</option>)}
+            {callResults.map(r => <option key={r}>{r}</option>)}
           </select>
           <select className="input" value={filters.call_method} onChange={e => setFilter('call_method', e.target.value)}>
             <option value="">Tất cả hình thức</option>
-            {CALL_METHODS.map(m => <option key={m}>{m}</option>)}
+            {callMethods.map(m => <option key={m}>{m}</option>)}
           </select>
           {canManage && (
             <select className="input" value={filters.sale_id} onChange={e => setFilter('sale_id', e.target.value)}>
@@ -141,27 +147,27 @@ export default function CallLogs() {
             <div>
               <label className="label">Hình thức liên hệ *</label>
               <select className="input" required value={form.call_method} onChange={e => setForm(f => ({ ...f, call_method: e.target.value }))}>
-                {CALL_METHODS.map(m => <option key={m}>{m}</option>)}
+                {callMethods.map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Kết quả *</label>
               <select className="input" required value={form.call_result} onChange={e => setForm(f => ({ ...f, call_result: e.target.value }))}>
                 <option value="">-- Chọn kết quả --</option>
-                {CALL_RESULTS.map(r => <option key={r}>{r}</option>)}
+                {callResults.map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Trạng thái xử lý</label>
               <select className="input" value={form.call_status} onChange={e => setForm(f => ({ ...f, call_status: e.target.value }))}>
-                {CALL_STATUSES.map(s => <option key={s}>{s}</option>)}
+                {callStatuses.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Hành động tiếp theo</label>
               <select className="input" value={form.next_action} onChange={e => setForm(f => ({ ...f, next_action: e.target.value }))}>
                 <option value="">-- Chọn --</option>
-                {NEXT_ACTIONS.map(a => <option key={a}>{a}</option>)}
+                {nextActions.map(a => <option key={a}>{a}</option>)}
               </select>
             </div>
             <div>

@@ -79,7 +79,7 @@ router.get('/export/excel', authenticate, async (req, res) => {
 router.get('/', authenticate, async (req, res) => {
   try {
     const db = await getDb();
-    const { search, sale_id, area_id, status, customer_type, potential_level } = req.query;
+    const { search, sale_id, area_id, status, sales_channel, customer_type, segment, potential_level } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const { where: accessWhere, params: accessParams } = await buildCustomerQuery(req.user);
@@ -91,7 +91,9 @@ router.get('/', authenticate, async (req, res) => {
     if (sale_id && req.user.role !== 'Sale' && req.user.role !== 'Telesale') { conditions.push('c.assigned_sale_id = ?'); params.push(sale_id); }
     if (area_id) { conditions.push('c.area_id = ?'); params.push(area_id); }
     if (status) { conditions.push('c.status = ?'); params.push(status); }
+    if (sales_channel) { conditions.push('c.sales_channel = ?'); params.push(sales_channel); }
     if (customer_type) { conditions.push('c.customer_type = ?'); params.push(customer_type); }
+    if (segment) { conditions.push('c.segment = ?'); params.push(segment); }
     if (potential_level) { conditions.push('c.potential_level = ?'); params.push(potential_level); }
 
     const where = conditions.join(' AND ');
@@ -129,7 +131,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { customer_name, phone, zalo, address, province, district, ward, customer_type, source, potential_level, status, assigned_sale_id, area_id, note } = req.body;
+    const { customer_name, phone, zalo, address, province, district, ward, sales_channel, customer_type, segment, chain_system, source, potential_level, status, assigned_sale_id, area_id, note } = req.body;
     if (!customer_name || !phone) return res.status(400).json({ message: 'Tên và số điện thoại là bắt buộc' });
     const db = await getDb();
     const phoneExists = await db.get('SELECT customer_id FROM customers WHERE phone = ?', [phone]);
@@ -139,8 +141,8 @@ router.post('/', authenticate, async (req, res) => {
     const countRow = await db.get('SELECT COUNT(*) as c FROM customers');
     const customer_code = `KH${String(countRow.c + 1).padStart(4, '0')}`;
     const result = await db.run(
-      'INSERT INTO customers (customer_code,customer_name,phone,zalo,address,province,district,ward,customer_type,source,potential_level,status,assigned_sale_id,area_id,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [customer_code, customer_name, phone, zalo || null, address || null, province || null, district || null, ward || null, customer_type || null, source || null, potential_level || null, status || 'Khách mới', saleId, areaId || null, note || null]
+      'INSERT INTO customers (customer_code,customer_name,phone,zalo,address,province,district,ward,sales_channel,customer_type,segment,chain_system,source,potential_level,status,assigned_sale_id,area_id,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [customer_code, customer_name, phone, zalo || null, address || null, province || null, district || null, ward || null, sales_channel || null, customer_type || null, segment || null, chain_system || null, source || null, potential_level || null, status || 'Khách mới', saleId, areaId || null, note || null]
     );
     await logAudit(req.user.user_id, 'CREATE', 'customer', result.lastID, null, req.body);
     res.status(201).json({ message: 'Thêm khách hàng thành công', customer_id: result.lastID, customer_code });
@@ -155,17 +157,20 @@ router.put('/:id', authenticate, async (req, res) => {
     if ((req.user.role === 'Sale' || req.user.role === 'Telesale') && old.assigned_sale_id !== req.user.user_id) {
       return res.status(403).json({ message: 'Bạn không có quyền sửa khách hàng này' });
     }
-    const { customer_name, phone, zalo, address, province, district, ward, customer_type, source, potential_level, status, assigned_sale_id, area_id, note } = req.body;
+    const { customer_name, phone, zalo, address, province, district, ward, sales_channel, customer_type, segment, chain_system, source, potential_level, status, assigned_sale_id, area_id, note } = req.body;
     if (phone && phone !== old.phone) {
       const exists = await db.get('SELECT customer_id FROM customers WHERE phone = ? AND customer_id != ?', [phone, req.params.id]);
       if (exists) return res.status(400).json({ message: 'Số điện thoại đã tồn tại' });
     }
     const newSaleId = (req.user.role === 'Admin' || req.user.role === 'Manager') ? (assigned_sale_id ?? old.assigned_sale_id) : old.assigned_sale_id;
     const newAreaId = req.user.role === 'Admin' ? (area_id ?? old.area_id) : old.area_id;
-    await db.run(`UPDATE customers SET customer_name=?,phone=?,zalo=?,address=?,province=?,district=?,ward=?,customer_type=?,
+    await db.run(`UPDATE customers SET customer_name=?,phone=?,zalo=?,address=?,province=?,district=?,ward=?,
+      sales_channel=?,customer_type=?,segment=?,chain_system=?,
       source=?,potential_level=?,status=?,assigned_sale_id=?,area_id=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE customer_id=?`,
       [customer_name || old.customer_name, phone || old.phone, zalo ?? old.zalo, address ?? old.address,
-       province ?? old.province, district ?? old.district, ward ?? old.ward, customer_type ?? old.customer_type,
+       province ?? old.province, district ?? old.district, ward ?? old.ward,
+       sales_channel ?? old.sales_channel, customer_type ?? old.customer_type,
+       segment ?? old.segment, chain_system ?? old.chain_system,
        source ?? old.source, potential_level ?? old.potential_level, status ?? old.status, newSaleId, newAreaId,
        note ?? old.note, req.params.id]);
     await logAudit(req.user.user_id, 'UPDATE', 'customer', req.params.id, old, req.body);

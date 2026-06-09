@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { path: '/reports', icon: '📈', label: 'Báo cáo' },
   { path: '/users', icon: '👤', label: 'Người dùng', adminOnly: true },
   { path: '/areas', icon: '🗺️', label: 'Khu vực', adminOnly: true },
+  { path: '/settings', icon: '⚙️', label: 'Cài đặt', adminOnly: true },
 ];
 
 export default function Layout({ children }) {
