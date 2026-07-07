@@ -70,6 +70,7 @@ export const customersApi = {
   create: (data) => api.post('/customers', data),
   update: (id, data) => api.put(`/customers/${id}`, data),
   delete: (id) => api.delete(`/customers/${id}`),
+  bulkDelete: (ids) => api.post('/customers/bulk-delete', { ids }),
   exportExcel: () => downloadBlob(`${BASE_URL}/customers/export/excel`, 'customers.xlsx'),
   downloadTemplate: () => downloadBlob(`${BASE_URL}/customers/import/template`, 'import_template.xlsx'),
   importExcel: (file) => {

@@ -58,6 +58,9 @@ async function startServer() {
       needsSeed = true;
     }
 
+    // Migration: create migrations tracker
+    await db.run(`CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+
     // Migration: add new columns
     try { await db.run('ALTER TABLE call_logs ADD COLUMN call_method TEXT'); } catch {}
     try { await db.run("ALTER TABLE call_logs ADD COLUMN call_status TEXT DEFAULT 'Kết thúc'"); } catch {}
@@ -142,13 +145,45 @@ async function startServer() {
       console.log('✅ Lookup values seeded');
     }
 
+    // Migration: remove UNIQUE constraint from customers.phone (allow same phone for different stores)
+    const phoneMig = await db.get("SELECT name FROM migrations WHERE name = 'remove_phone_unique'");
+    if (!phoneMig) {
+      try {
+        await db.run(`DROP TABLE IF EXISTS customers_tmp`);
+        await db.exec(`
+          CREATE TABLE customers_tmp (
+            customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_code TEXT UNIQUE,
+            customer_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            zalo TEXT, address TEXT, province TEXT, district TEXT, ward TEXT,
+            sales_channel TEXT, customer_type TEXT, segment TEXT, chain_system TEXT,
+            source TEXT, potential_level TEXT,
+            status TEXT DEFAULT 'Khách mới',
+            assigned_sale_id INTEGER,
+            area_id INTEGER,
+            note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT INTO customers_tmp SELECT customer_id,customer_code,customer_name,phone,zalo,address,province,district,ward,sales_channel,customer_type,segment,chain_system,source,potential_level,status,assigned_sale_id,area_id,note,created_at,updated_at FROM customers;
+          DROP TABLE customers;
+          ALTER TABLE customers_tmp RENAME TO customers
+        `);
+        await db.run("INSERT OR IGNORE INTO migrations (name) VALUES ('remove_phone_unique')");
+        console.log('✅ Migration: removed UNIQUE from customers.phone');
+      } catch (e) {
+        console.log('Phone unique migration skipped:', e.message);
+      }
+    }
+
     if (needsSeed) {
       console.log('🌱 Database empty — running initial seed...');
       const bcrypt = require('bcryptjs');
       await db.exec(`
         CREATE TABLE IF NOT EXISTS areas (area_id INTEGER PRIMARY KEY AUTOINCREMENT, area_name TEXT NOT NULL, province TEXT, district TEXT, manager_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, phone TEXT, password_hash TEXT NOT NULL, role TEXT NOT NULL, area_id INTEGER REFERENCES areas(area_id), status TEXT DEFAULT 'Active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS customers (customer_id INTEGER PRIMARY KEY AUTOINCREMENT, customer_code TEXT UNIQUE, customer_name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE, zalo TEXT, address TEXT, province TEXT, district TEXT, ward TEXT, customer_type TEXT, source TEXT, potential_level TEXT, status TEXT DEFAULT 'Khách mới', assigned_sale_id INTEGER REFERENCES users(user_id), area_id INTEGER REFERENCES areas(area_id), note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS customers (customer_id INTEGER PRIMARY KEY AUTOINCREMENT, customer_code TEXT UNIQUE, customer_name TEXT NOT NULL, phone TEXT NOT NULL, zalo TEXT, address TEXT, province TEXT, district TEXT, ward TEXT, customer_type TEXT, source TEXT, potential_level TEXT, status TEXT DEFAULT 'Khách mới', assigned_sale_id INTEGER REFERENCES users(user_id), area_id INTEGER REFERENCES areas(area_id), note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS call_logs (call_id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE, sale_id INTEGER NOT NULL REFERENCES users(user_id), call_date DATE NOT NULL, call_time TIME, call_result TEXT, call_content TEXT, customer_need TEXT, interest_level TEXT, next_action TEXT, follow_up_date DATE, status_after_call TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS follow_ups (followup_id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE, sale_id INTEGER NOT NULL REFERENCES users(user_id), follow_up_date DATE NOT NULL, follow_up_type TEXT, content TEXT, status TEXT DEFAULT 'Chưa xử lý', result_note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS opportunities (opportunity_id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE, sale_id INTEGER NOT NULL REFERENCES users(user_id), stage TEXT DEFAULT 'Lead mới', estimated_value REAL DEFAULT 0, expected_close_date DATE, probability INTEGER DEFAULT 0, note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);

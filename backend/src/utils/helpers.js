@@ -9,7 +9,8 @@ async function buildCustomerQuery(user) {
     if (!ids.length) return { where: '1=0', params: [] };
     return { where: `c.assigned_sale_id IN (${ids.map(() => '?').join(',')})`, params: ids };
   }
-  return { where: 'c.assigned_sale_id = ?', params: [user.user_id] };
+  // Sale/Telesale can view all customers
+  return { where: '1=1', params: [] };
 }
 
 async function logAudit(userId, action, entityType, entityId, oldData, newData) {

@@ -19,6 +19,8 @@ export default function Customers() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileRef = useRef();
 
@@ -39,6 +41,10 @@ export default function Customers() {
   const mutCreate = useMutation({ mutationFn: customersApi.create, onSuccess: () => { toast.success('Thêm khách hàng thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
   const mutUpdate = useMutation({ mutationFn: ({ id, data }) => customersApi.update(id, data), onSuccess: () => { toast.success('Cập nhật thành công'); qc.invalidateQueries(['customers']); closeModal(); } });
   const mutDelete = useMutation({ mutationFn: customersApi.delete, onSuccess: () => { toast.success('Đã xóa khách hàng'); qc.invalidateQueries(['customers']); setDeleteId(null); } });
+  const mutBulkDelete = useMutation({
+    mutationFn: () => customersApi.bulkDelete(selectedIds),
+    onSuccess: (res) => { toast.success(res.message); qc.invalidateQueries(['customers']); setSelectedIds([]); setShowBulkConfirm(false); }
+  });
   const mutImport = useMutation({
     mutationFn: customersApi.importExcel,
     onSuccess: (res) => {
@@ -73,12 +79,25 @@ export default function Customers() {
   const setFilter = (k, v) => setFilters(f => ({ ...f, [k]: v, page: 1 }));
 
   const sales = users.filter(u => u.role === 'Sale' || u.role === 'Telesale');
+  const rows = data?.data || [];
+  const allPageIds = rows.map(c => c.customer_id);
+  const allPageSelected = allPageIds.length > 0 && allPageIds.every(id => selectedIds.includes(id));
+  const toggleSelectAll = () => {
+    if (allPageSelected) setSelectedIds(prev => prev.filter(id => !allPageIds.includes(id)));
+    else setSelectedIds(prev => [...new Set([...prev, ...allPageIds])]);
+  };
+  const toggleOne = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   return (
     <div className="space-y-4">
       <div className="page-header">
         <h1 className="page-title">👥 Khách hàng</h1>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          {canManage && selectedIds.length > 0 && (
+            <button onClick={() => setShowBulkConfirm(true)} className="btn-danger btn-sm">
+              🗑 Xóa đã chọn ({selectedIds.length})
+            </button>
+          )}
           {canManage && (
             <>
               <button onClick={() => customersApi.exportExcel()} className="btn-secondary btn-sm">📥 Export</button>
@@ -136,6 +155,7 @@ export default function Customers() {
           <table className="table">
             <thead>
               <tr>
+                {canManage && <th><input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="w-4 h-4 cursor-pointer" /></th>}
                 <th>Mã KH</th><th>Khách hàng</th><th>Số điện thoại</th>
                 <th>Loại KH</th><th>Tiềm năng</th><th>Trạng thái</th>
                 {canManage && <th>Sale phụ trách</th>}
@@ -145,10 +165,11 @@ export default function Customers() {
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={9} className="text-center py-10 text-gray-400">Đang tải...</td></tr>
-              ) : data?.data?.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-10 text-gray-400">Không có dữ liệu</td></tr>
-              ) : data?.data?.map(c => (
-                <tr key={c.customer_id}>
+              ) : rows.map(c => (
+                <tr key={c.customer_id} className={selectedIds.includes(c.customer_id) ? 'bg-primary-50' : ''}>
+                  {canManage && <td><input type="checkbox" checked={selectedIds.includes(c.customer_id)} onChange={() => toggleOne(c.customer_id)} className="w-4 h-4 cursor-pointer" /></td>}
                   <td><span className="text-xs font-mono text-gray-500">{c.customer_code}</span></td>
                   <td>
                     <Link to={`/customers/${c.customer_id}`} className="font-medium text-primary-600 hover:text-primary-800">{c.customer_name}</Link>
@@ -166,7 +187,9 @@ export default function Customers() {
                   <td>
                     <div className="flex gap-1">
                       <Link to={`/customers/${c.customer_id}`} className="btn-secondary btn-sm px-2 py-1">👁</Link>
-                      <button onClick={() => openEdit(c)} className="btn-secondary btn-sm px-2 py-1">✏️</button>
+                      {(canManage || c.assigned_sale_id === user?.user_id) && (
+                        <button onClick={() => openEdit(c)} className="btn-secondary btn-sm px-2 py-1">✏️</button>
+                      )}
                       {canManage && <button onClick={() => setDeleteId(c.customer_id)} className="btn-danger btn-sm px-2 py-1">🗑</button>}
                     </div>
                   </td>
@@ -290,6 +313,14 @@ export default function Customers() {
         loading={mutDelete.isPending}
         title="Xóa khách hàng"
         message="Bạn có chắc chắn muốn xóa khách hàng này? Toàn bộ lịch sử cuộc gọi và follow-up sẽ bị xóa theo."
+      />
+      <ConfirmDialog
+        open={showBulkConfirm}
+        onClose={() => setShowBulkConfirm(false)}
+        onConfirm={() => mutBulkDelete.mutate()}
+        loading={mutBulkDelete.isPending}
+        title={`Xóa ${selectedIds.length} khách hàng`}
+        message={`Bạn có chắc muốn xóa ${selectedIds.length} khách hàng đã chọn? Toàn bộ lịch sử cuộc gọi và follow-up sẽ bị xóa theo.`}
       />
 
       {/* Import result modal */}

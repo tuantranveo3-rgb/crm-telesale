@@ -115,9 +115,6 @@ router.get('/:id', authenticate, async (req, res) => {
       FROM customers c LEFT JOIN users u ON c.assigned_sale_id = u.user_id LEFT JOIN areas a ON c.area_id = a.area_id
       WHERE c.customer_id = ?`, [req.params.id]);
     if (!customer) return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
-    if ((req.user.role === 'Sale' || req.user.role === 'Telesale') && customer.assigned_sale_id !== req.user.user_id) {
-      return res.status(403).json({ message: 'Bạn không có quyền xem khách hàng này' });
-    }
     const calls = await db.all(`SELECT 'call' as type, call_id as id, call_date as date, call_time as time,
       call_result as title, call_content as content, created_at FROM call_logs WHERE customer_id = ? ORDER BY call_date DESC, call_time DESC LIMIT 20`, [req.params.id]);
     const followups = await db.all(`SELECT 'followup' as type, followup_id as id, follow_up_date as date, null as time,
@@ -134,8 +131,8 @@ router.post('/', authenticate, async (req, res) => {
     const { customer_name, phone, zalo, address, province, district, ward, sales_channel, customer_type, segment, chain_system, source, potential_level, status, assigned_sale_id, area_id, note } = req.body;
     if (!customer_name || !phone) return res.status(400).json({ message: 'Tên và số điện thoại là bắt buộc' });
     const db = await getDb();
-    const phoneExists = await db.get('SELECT customer_id FROM customers WHERE phone = ?', [phone]);
-    if (phoneExists) return res.status(400).json({ message: 'Số điện thoại đã tồn tại trong hệ thống' });
+    const nameExists = await db.get('SELECT customer_id FROM customers WHERE LOWER(customer_name) = LOWER(?)', [customer_name]);
+    if (nameExists) return res.status(400).json({ message: 'Tên khách hàng đã tồn tại trong hệ thống' });
     const saleId = (req.user.role === 'Sale' || req.user.role === 'Telesale') ? req.user.user_id : (assigned_sale_id || req.user.user_id);
     const areaId = area_id || req.user.area_id;
     const countRow = await db.get('SELECT COUNT(*) as c FROM customers');
@@ -178,6 +175,18 @@ router.put('/:id', authenticate, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+router.post('/bulk-delete', authenticate, authorize('Admin', 'Manager'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: 'Không có ID nào được chọn' });
+    const db = await getDb();
+    const placeholders = ids.map(() => '?').join(',');
+    const result = await db.run(`DELETE FROM customers WHERE customer_id IN (${placeholders})`, ids);
+    await logAudit(req.user.user_id, 'BULK_DELETE', 'customer', null, { ids }, null);
+    res.json({ message: `Đã xóa ${result.changes || ids.length} khách hàng` });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.delete('/:id', authenticate, authorize('Admin', 'Manager'), async (req, res) => {
   try {
     const db = await getDb();
@@ -212,8 +221,8 @@ router.post('/import/excel', authenticate, upload.single('file'), async (req, re
       results._rows.push({ customer_name: String(customer_name).trim(), phone: phoneStr, zalo: zalo ? String(zalo).trim() : null, address: address ? String(address).trim() : null, province: province ? String(province).trim() : null, district: district ? String(district).trim() : null, ward: ward ? String(ward).trim() : null, customer_type: customer_type ? String(customer_type).trim() : null, source: source ? String(source).trim() : null, potential_level: potential_level ? String(potential_level).trim() : null, note: note ? String(note).trim() : null, rowNumber });
     });
     for (const row of (results._rows || [])) {
-      const exists = await db.get('SELECT customer_id FROM customers WHERE phone = ?', [row.phone]);
-      if (exists) { results.errors.push({ row: row.rowNumber, error: `SĐT ${row.phone} đã tồn tại` }); continue; }
+      const exists = await db.get('SELECT customer_id FROM customers WHERE LOWER(customer_name) = LOWER(?)', [row.customer_name]);
+      if (exists) { results.errors.push({ row: row.rowNumber, error: `Tên "${row.customer_name}" đã tồn tại` }); continue; }
       try {
         const customer_code = `KH${String(counter).padStart(4, '0')}`;
         await db.run('INSERT INTO customers (customer_code,customer_name,phone,zalo,address,province,district,ward,customer_type,source,potential_level,assigned_sale_id,area_id,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
