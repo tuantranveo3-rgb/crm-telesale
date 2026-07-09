@@ -11,6 +11,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 // Download template FIRST (before /:id)
 router.get('/import/template', authenticate, async (req, res) => {
   try {
+    const db = await getDb();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Template');
     sheet.columns = [
@@ -25,10 +26,27 @@ router.get('/import/template', authenticate, async (req, res) => {
       { header: 'Nguồn (DMS/Facebook/Zalo/Telesales/Giới thiệu/Đi thị trường/Khác)', key: 'source', width: 40 },
       { header: 'Tiềm năng (Cao/Trung bình/Thấp)', key: 'potential_level', width: 25 },
       { header: 'Ghi chú', key: 'note', width: 30 },
+      { header: 'Sale phụ trách (họ tên — xem sheet Danh sách Sale)', key: 'sale_name', width: 35 },
     ];
     sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D9488' } };
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet.addRow({ customer_name: 'Tiệm Nail Mẫu', phone: '0912345678', customer_type: 'Tiệm nail', source: 'Telesales', potential_level: 'Cao' });
+    // Style the sale column header yellow to indicate optional-but-useful
+    sheet.getCell('L1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCA8A04' } };
+    sheet.addRow({ customer_name: 'Tiệm Nail Mẫu', phone: '0912345678', customer_type: 'Tiệm nail', source: 'Telesales', potential_level: 'Cao', sale_name: '' });
+
+    // Sheet 2: Danh sách Sale để tham khảo
+    const saleSheet = workbook.addWorksheet('Danh sách Sale');
+    saleSheet.columns = [
+      { header: 'Họ tên (dùng để điền vào cột Sale phụ trách)', key: 'full_name', width: 35 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Vai trò', key: 'role', width: 12 },
+      { header: 'Khu vực', key: 'area_name', width: 20 },
+    ];
+    saleSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCA8A04' } };
+    saleSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    const saleUsers = await db.all(`SELECT u.full_name, u.email, u.role, a.area_name FROM users u LEFT JOIN areas a ON u.area_id = a.area_id WHERE u.role IN ('Sale','Telesale') AND u.status='Active' ORDER BY u.full_name`);
+    saleUsers.forEach(u => saleSheet.addRow(u));
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=import_template.xlsx');
     await workbook.xlsx.write(res);
@@ -211,22 +229,45 @@ router.post('/import/excel', authenticate, upload.single('file'), async (req, re
     const areaId = req.user.area_id;
     const countRow = await db.get('SELECT COUNT(*) as c FROM customers');
     let counter = countRow.c + 1;
+    // Pre-load all sale users for name lookup
+    const allSales = await db.all("SELECT user_id, full_name, area_id FROM users WHERE role IN ('Sale','Telesale') AND status='Active'");
+    const saleByName = {};
+    allSales.forEach(u => { saleByName[u.full_name.toLowerCase().trim()] = u; });
+
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const [, customer_name, phone, zalo, address, province, district, ward, customer_type, source, potential_level, note] = row.values;
+      const [, customer_name, phone, zalo, address, province, district, ward, customer_type, source, potential_level, note, sale_name] = row.values;
       if (!customer_name || !phone) { results.errors.push({ row: rowNumber, error: 'Thiếu tên hoặc SĐT' }); return; }
       const phoneStr = String(phone).trim();
-      // Note: async inside eachRow won't work well, collect sync
       results._rows = results._rows || [];
-      results._rows.push({ customer_name: String(customer_name).trim(), phone: phoneStr, zalo: zalo ? String(zalo).trim() : null, address: address ? String(address).trim() : null, province: province ? String(province).trim() : null, district: district ? String(district).trim() : null, ward: ward ? String(ward).trim() : null, customer_type: customer_type ? String(customer_type).trim() : null, source: source ? String(source).trim() : null, potential_level: potential_level ? String(potential_level).trim() : null, note: note ? String(note).trim() : null, rowNumber });
+      results._rows.push({
+        customer_name: String(customer_name).trim(), phone: phoneStr,
+        zalo: zalo ? String(zalo).trim() : null, address: address ? String(address).trim() : null,
+        province: province ? String(province).trim() : null, district: district ? String(district).trim() : null,
+        ward: ward ? String(ward).trim() : null, customer_type: customer_type ? String(customer_type).trim() : null,
+        source: source ? String(source).trim() : null, potential_level: potential_level ? String(potential_level).trim() : null,
+        note: note ? String(note).trim() : null,
+        sale_name: sale_name ? String(sale_name).trim() : null,
+        rowNumber,
+      });
     });
     for (const row of (results._rows || [])) {
       const exists = await db.get('SELECT customer_id FROM customers WHERE LOWER(customer_name) = LOWER(?)', [row.customer_name]);
       if (exists) { results.errors.push({ row: row.rowNumber, error: `Tên "${row.customer_name}" đã tồn tại` }); continue; }
+
+      // Resolve assigned sale
+      let assignedSaleId = saleId;
+      let assignedAreaId = areaId;
+      if (row.sale_name) {
+        const matched = saleByName[row.sale_name.toLowerCase()];
+        if (matched) { assignedSaleId = matched.user_id; assignedAreaId = matched.area_id || areaId; }
+        else { results.errors.push({ row: row.rowNumber, error: `Không tìm thấy sale "${row.sale_name}" — gán cho người import` }); }
+      }
+
       try {
         const customer_code = `KH${String(counter).padStart(4, '0')}`;
         await db.run('INSERT INTO customers (customer_code,customer_name,phone,zalo,address,province,district,ward,customer_type,source,potential_level,assigned_sale_id,area_id,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [customer_code, row.customer_name, row.phone, row.zalo, row.address, row.province, row.district, row.ward, row.customer_type, row.source, row.potential_level, saleId, areaId, row.note]);
+          [customer_code, row.customer_name, row.phone, row.zalo, row.address, row.province, row.district, row.ward, row.customer_type, row.source, row.potential_level, assignedSaleId, assignedAreaId, row.note]);
         counter++; results.success++;
       } catch (err) { results.errors.push({ row: row.rowNumber, error: err.message }); }
     }
