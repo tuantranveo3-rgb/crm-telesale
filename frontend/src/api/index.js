@@ -109,11 +109,17 @@ export const dashboardApi = {
 };
 
 export const reportsApi = {
-  customers: (params) => api.get('/reports/customers', { params }),
-  calls: (params) => api.get('/reports/calls', { params }),
-  followups: () => api.get('/reports/followups'),
+  overview: (params) => api.get('/reports/overview', { params }),
+  callDetails: (params) => api.get('/reports/call-details', { params }),
+  salePerformance: (params) => api.get('/reports/sale-performance', { params }),
+  callsByCustomer: (params) => api.get('/reports/calls-by-customer', { params }),
+  followups: (params) => api.get('/reports/followups', { params }),
   pipeline: () => api.get('/reports/pipeline'),
-  exportExcel: (type) => downloadBlob(`${BASE_URL}/reports/export/${type}`, `report_${type}.xlsx`),
+  customers: (params) => api.get('/reports/customers', { params }),
+  exportExcel: (type, params) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return downloadBlob(`${BASE_URL}/reports/export/${type}${qs}`, `report_${type}.xlsx`);
+  },
 };
 
 export const settingsApi = {
