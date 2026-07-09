@@ -44,9 +44,6 @@ router.post('/', authenticate, async (req, res) => {
     const db = await getDb();
     const customer = await db.get('SELECT * FROM customers WHERE customer_id = ?', [customer_id]);
     if (!customer) return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
-    if ((req.user.role === 'Sale' || req.user.role === 'Telesale') && customer.assigned_sale_id !== req.user.user_id) {
-      return res.status(403).json({ message: 'Bạn không có quyền nhập cuộc gọi cho khách hàng này' });
-    }
     const result = await db.run(
       'INSERT INTO call_logs (customer_id,sale_id,call_date,call_time,call_result,call_method,call_status,call_content,customer_need,interest_level,next_action,follow_up_date,status_after_call) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [customer_id, req.user.user_id, call_date, call_time || null, call_result, call_method || 'Gọi điện', call_status || 'Kết thúc', call_content || null, customer_need || null, interest_level || null, next_action || null, follow_up_date || null, status_after_call || null]
