@@ -14,6 +14,7 @@ export default function CallLogs() {
   const today = new Date().toISOString().split('T')[0];
   const [filters, setFilters] = useState({ call_result: '', call_method: '', sale_id: '', date_from: today, date_to: today, page: 1, limit: 20 });
   const [modal, setModal] = useState(false);
+  const [detailLog, setDetailLog] = useState(null);
   const [custSearch, setCustSearch] = useState('');
   const [form, setForm] = useState({
     customer_id: '', call_date: today, call_time: '', call_result: '',
@@ -109,7 +110,13 @@ export default function CallLogs() {
                   <td><span className="badge badge-blue">{log.call_method || 'Gọi điện'}</span></td>
                   <td><span className={`${CALL_RESULT_COLORS[log.call_result] || 'badge-gray'} badge`}>{log.call_result}</span></td>
                   <td><span className={`${CALL_STATUS_COLORS[log.call_status] || 'badge-gray'} badge`}>{log.call_status || 'Kết thúc'}</span></td>
-                  <td className="text-sm text-gray-600 max-w-[180px]"><p className="truncate">{log.call_content || '—'}</p></td>
+                  <td className="text-sm text-gray-600 max-w-[200px]">
+                    {log.call_content ? (
+                      <p className="line-clamp-2 cursor-pointer hover:text-primary-600" title="Click để xem đầy đủ" onClick={() => setDetailLog(log)}>
+                        {log.call_content}
+                      </p>
+                    ) : '—'}
+                  </td>
                   <td className="text-sm text-gray-600">{log.next_action || '—'}</td>
                   <td className="text-sm text-gray-600">{log.follow_up_date ? <span className="badge-blue badge">{formatDate(log.follow_up_date)}</span> : '—'}</td>
                   {canManage && <td className="text-sm text-gray-600">{log.sale_name}</td>}
@@ -123,6 +130,34 @@ export default function CallLogs() {
         </div>
         <Pagination pagination={data?.pagination} onPageChange={p => setFilters(f => ({ ...f, page: p }))} />
       </div>
+
+      {/* Chi tiết cuộc gọi */}
+      <Modal open={!!detailLog} onClose={() => setDetailLog(null)} title="📞 Chi tiết cuộc gọi" size="md">
+        {detailLog && (
+          <div className="space-y-3">
+            <div className="flex gap-3 flex-wrap">
+              <span className="badge badge-blue">{detailLog.call_method || 'Gọi điện'}</span>
+              <span className={`badge ${CALL_RESULT_COLORS[detailLog.call_result] || 'badge-gray'}`}>{detailLog.call_result}</span>
+              <span className={`badge ${CALL_STATUS_COLORS[detailLog.call_status] || 'badge-gray'}`}>{detailLog.call_status || 'Kết thúc'}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <div><span className="text-gray-400">Khách hàng:</span> <span className="font-medium">{detailLog.customer_name}</span></div>
+              <div><span className="text-gray-400">SĐT:</span> {detailLog.phone}</div>
+              <div><span className="text-gray-400">Ngày gọi:</span> {formatDate(detailLog.call_date)} {detailLog.call_time || ''}</div>
+              {detailLog.sale_name && <div><span className="text-gray-400">Sale:</span> {detailLog.sale_name}</div>}
+              {detailLog.next_action && <div><span className="text-gray-400">Hành động tiếp:</span> {detailLog.next_action}</div>}
+              {detailLog.follow_up_date && <div><span className="text-gray-400">Follow-up:</span> <span className="text-primary-600 font-medium">{formatDate(detailLog.follow_up_date)}</span></div>}
+            </div>
+            <div>
+              <p className="text-gray-400 text-sm mb-1">Nội dung cuộc gọi:</p>
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{detailLog.call_content || '—'}</div>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setDetailLog(null)} className="btn-secondary">Đóng</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={modal} onClose={() => setModal(false)} title="📞 Nhập kết quả cuộc gọi" size="lg">
         <form onSubmit={(e) => { e.preventDefault(); mutCreate.mutate(form); }} className="space-y-4">
