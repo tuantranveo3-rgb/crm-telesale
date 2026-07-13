@@ -153,8 +153,8 @@ router.post('/', authenticate, async (req, res) => {
     if (nameExists) return res.status(400).json({ message: 'Tên khách hàng đã tồn tại trong hệ thống' });
     const saleId = (req.user.role === 'Sale' || req.user.role === 'Telesale') ? req.user.user_id : (assigned_sale_id || req.user.user_id);
     const areaId = area_id || req.user.area_id;
-    const countRow = await db.get('SELECT COUNT(*) as c FROM customers');
-    const customer_code = `KH${String(countRow.c + 1).padStart(4, '0')}`;
+    const maxCode = await db.get("SELECT MAX(CAST(SUBSTR(customer_code,3) AS INTEGER)) as m FROM customers WHERE customer_code LIKE 'KH%'");
+    const customer_code = `KH${String((maxCode?.m || 0) + 1).padStart(4, '0')}`;
     const result = await db.run(
       'INSERT INTO customers (customer_code,customer_name,phone,zalo,address,province,district,ward,sales_channel,customer_type,segment,chain_system,source,potential_level,status,assigned_sale_id,area_id,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [customer_code, customer_name, phone, zalo || null, address || null, province || null, district || null, ward || null, sales_channel || null, customer_type || null, segment || null, chain_system || null, source || null, potential_level || null, status || 'Khách mới', saleId, areaId || null, note || null]
@@ -227,8 +227,8 @@ router.post('/import/excel', authenticate, upload.single('file'), async (req, re
     const results = { success: 0, errors: [] };
     const saleId = req.user.user_id;
     const areaId = req.user.area_id;
-    const countRow = await db.get('SELECT COUNT(*) as c FROM customers');
-    let counter = countRow.c + 1;
+    const maxCode = await db.get("SELECT MAX(CAST(SUBSTR(customer_code,3) AS INTEGER)) as m FROM customers WHERE customer_code LIKE 'KH%'");
+    let counter = (maxCode?.m || 0) + 1;
     // Pre-load all sale users for name lookup
     const allSales = await db.all("SELECT user_id, full_name, area_id FROM users WHERE role IN ('Sale','Telesale') AND status='Active'");
     const saleByName = {};
